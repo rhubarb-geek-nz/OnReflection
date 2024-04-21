@@ -69,4 +69,30 @@ $result = Invoke-Reflection -Method FromBase64String -Type ([System.Convert]) -A
 
 Assert { $result.Length -eq 3 }
 
+$data = (
+	[PSCustomObject]@{
+		Method = 'GetHashCode'
+		Object = $bottle
+	},
+	[PSCustomObject]@{
+		Method = 'ToString'
+		Object = $bottle
+	},
+	[PSCustomObject]@{
+		Method = 'GetMessage'
+		Object = $bottle
+	},
+	[PSCustomObject]@{
+		Method = 'CreateInstance'
+		Type = ([System.Activator])
+		ArgumentList = @(,([System.Collections.ArrayList]))
+	}
+) | Invoke-Reflection
+
+Assert { $data.Count -eq 4 }
+Assert { $data[0] -is [int] }
+Assert { $data[1] -eq 'RhubarbGeekNz.OnReflection.Bottle' }
+Assert { $data[2] -eq $message }
+Assert { $data[3] -is [System.Collections.IEnumerable] }
+
 Write-Information 'Tests complete'
