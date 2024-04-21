@@ -6,6 +6,9 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 #endif
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Reflection;
@@ -45,7 +48,7 @@ namespace RhubarbGeekNz.OnReflection
 
                 var result = outputPipeline[0];
 
-                Assert.AreEqual(0,(int)result.BaseObject);
+                Assert.AreEqual(0, (int)result.BaseObject);
             }
         }
 
@@ -103,7 +106,7 @@ namespace RhubarbGeekNz.OnReflection
                 pobj.Members.Add(new PSNoteProperty("Type", typeof(System.Convert)));
                 pobj.Members.Add(new PSNoteProperty("ArgumentList", new byte[][] { new byte[] { 1, 2, 3 } }));
 
-                var outputPipeline = powerShell.Invoke(new object[] { pobj});
+                var outputPipeline = powerShell.Invoke(new object[] { pobj });
 
                 Assert.AreEqual(1, outputPipeline.Count);
 
@@ -119,16 +122,16 @@ namespace RhubarbGeekNz.OnReflection
             using (PowerShell powerShell = PowerShell.Create(initialSessionState))
             {
                 powerShell.AddScript(
-                    "$bytes = [byte[]]@(1,2,3)" + Environment.NewLine + 
-                    "$base64 = Invoke-Reflection -Method ToBase64String -Type ([System.Convert]) -ArgumentList @(,$bytes)" + Environment.NewLine+
+                    "$bytes = [byte[]]@(1,2,3)" + Environment.NewLine +
+                    "$base64 = Invoke-Reflection -Method ToBase64String -Type ([System.Convert]) -ArgumentList @(,$bytes)" + Environment.NewLine +
                     "Invoke-Reflection -Method FromBase64String -Type ([System.Convert]) -ArgumentList @(,[string]$base64)");
 
                 var outputPipeline = powerShell.Invoke();
                 Assert.AreEqual(1, outputPipeline.Count);
 
-                byte [] result = (byte[])outputPipeline[0].BaseObject;
+                byte[] result = (byte[])outputPipeline[0].BaseObject;
 
-                Assert.AreEqual(3,result.Length);
+                Assert.AreEqual(3, result.Length);
             }
         }
 
@@ -202,6 +205,110 @@ namespace RhubarbGeekNz.OnReflection
 
                 Assert.IsTrue(wasCaught, exType);
             }
+        }
+
+        [TestMethod]
+        public void TestNamedArguments()
+        {
+            using (PowerShell powerShell = PowerShell.Create(initialSessionState))
+            {
+                powerShell.AddScript(
+                    "Param($addParams,$getRangeParams)" + Environment.NewLine +
+                    "$list = New-Object System.Collections.ArrayList" + Environment.NewLine +
+                    "Invoke-Reflection -Method 'Add' -Object $list -ArgumentDictionary $addParams" + Environment.NewLine +
+                    "Invoke-Reflection -Method 'GetRange' -Object $list -ArgumentDictionary $getRangeParams"
+                    )
+                    .AddArgument(new Dictionary<string, object>() { { "value", "Hello World" } })
+                    .AddArgument(new Dictionary<string, object>() { { "index", 0 }, { "count", 1 } });
+
+                var outputPipeline = powerShell.Invoke();
+
+                Assert.AreEqual(2, outputPipeline.Count);
+                Assert.AreEqual(0, (int)outputPipeline[0].BaseObject);
+                Assert.AreEqual(1, ((ArrayList)outputPipeline[1].BaseObject).Count);
+                Assert.AreEqual("Hello World", ((ArrayList)outputPipeline[1].BaseObject)[0]);
+            }
+        }
+
+        [TestMethod]
+        public void TestHashTable()
+        {
+            using (PowerShell powerShell = PowerShell.Create(initialSessionState))
+            {
+                powerShell.AddScript(
+                    "$addParams = @{ value = 'Hello World' }" + Environment.NewLine +
+                    "$getRangeParams = @{ index = 0 ; count=1 }" + Environment.NewLine +
+                    "$list = New-Object System.Collections.ArrayList" + Environment.NewLine +
+                    "Invoke-Reflection -Method 'Add' -Object $list -ArgumentDictionary $addParams" + Environment.NewLine +
+                    "Invoke-Reflection -Method 'GetRange' -Object $list -ArgumentDictionary $getRangeParams"
+                    );
+
+                var outputPipeline = powerShell.Invoke();
+
+                Assert.AreEqual(2, outputPipeline.Count);
+                Assert.AreEqual(0, (int)outputPipeline[0].BaseObject);
+                Assert.AreEqual(1, ((ArrayList)outputPipeline[1].BaseObject).Count);
+                Assert.AreEqual("Hello World", ((ArrayList)outputPipeline[1].BaseObject)[0]);
+            }
+        }
+
+        [TestMethod]
+        public void TestNoArguments()
+        {
+            using (PowerShell powerShell = PowerShell.Create(initialSessionState))
+            {
+                powerShell.AddScript(
+                    "$list = New-Object System.Collections.ArrayList" + Environment.NewLine +
+                    "Invoke-Reflection -Method 'ToArray' -Object $list"
+                    )
+                    .AddArgument(new Dictionary<string, object>() { { "value", "Hello World" } })
+                    .AddArgument(new Dictionary<string, object>() { { "index", 0 }, { "count", 1 } });
+
+                var outputPipeline = powerShell.Invoke();
+
+                Assert.AreEqual(1, outputPipeline.Count);
+                Assert.AreEqual(0, ((object[])outputPipeline[0].BaseObject).Length);
+            }
+        }
+
+        public class MyBaseClass
+        {
+            public void BaseMethod() { }
+        }
+
+        public class MyDisposableClass : MyBaseClass, IDisposable
+        {
+            public void Dispose() { }
+        }
+
+        public class MyChildClass : MyDisposableClass
+        {
+            public MyChildClass() { }
+            public void ChildMethod() { }
+            public void MethodWithDefault(int foo, int bar = 4) { }
+        }
+
+        [TestMethod]
+        public void TestReflection()
+        {
+            MethodInfo baseMethod = typeof(MyBaseClass).GetMethod("BaseMethod");
+            MethodInfo disposeMethod = typeof(IDisposable).GetMethod("Dispose");
+            MethodInfo childMethod = typeof(MyChildClass).GetMethod("ChildMethod");
+            MethodInfo defaultMethod = typeof(MyChildClass).GetMethod("MethodWithDefault");
+            var defaultParams = defaultMethod.GetParameters();
+
+            Assert.IsNotNull(baseMethod, "base method is not null");
+            Assert.IsNotNull(disposeMethod, "dispose method is not null");
+            Assert.IsNotNull(childMethod, "child method is not null");
+
+            Assert.IsTrue(typeof(MyBaseClass).IsAssignableFrom(typeof(MyChildClass)), "Assign from test");
+            Assert.IsTrue(typeof(MyBaseClass).GetMethods().Where(m => m.Name.Equals(baseMethod.Name)).Any(), "base has base method");
+            Assert.IsFalse(typeof(MyBaseClass).GetMethods().Where(m => m.Name.Equals(childMethod.Name)).Any(), "base should not have child method");
+            Assert.IsFalse(typeof(MyBaseClass).GetMethods().Where(m => m.Name.Equals(disposeMethod.Name)).Any(), "base should not have dispose method");
+
+            Assert.IsTrue(typeof(MyChildClass).GetMethods().Where(m => m.Name.Equals(baseMethod.Name)).Any(), "child has base method");
+            Assert.IsTrue(typeof(MyChildClass).GetMethods().Where(m => m.Name.Equals(disposeMethod.Name)).Any(), "child has dispose method");
+            Assert.IsTrue(typeof(MyChildClass).GetMethods().Where(m => m.Name.Equals(childMethod.Name)).Any(), "base has child method");
         }
     }
 }

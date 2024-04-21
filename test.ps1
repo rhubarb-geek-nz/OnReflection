@@ -2,8 +2,6 @@
 # Copyright (c) 2024 Roger Brown.
 # Licensed under the MIT License.
 
-$env:__PSDumpAMSILogContent='1'
-
 trap
 {
 	throw $PSItem
@@ -22,23 +20,23 @@ function Assert
 	}
 }
 
-Write-Information 'Create a list to hold some strings'
+$cmd = Get-Command -Verb 'Invoke' -Noun 'Reflection'
+
+Assert { '1.0.1' -eq [string]$cmd.Version }
 
 $list = New-Object System.Collections.ArrayList -ArgumentList @(,0)
 
-$list.Count
+$a = Invoke-Reflection -Method Add -Object $list -ArgumentList @(,'foo')
 
-Write-Warning 'This will log to AMSI'
+Assert { $a -eq 0 }
 
-$list.Add('foo')
+$b = Invoke-Reflection -Method Add -Object $list -ArgumentDictionary @{
+	value = 'bar'
+}
 
-Write-Information 'This will not log to AMSI'
+Assert { $b -eq 1 }
 
-Invoke-Reflection -Method Add -Object $list -ArgumentList @(,'bar')
-
-$list.Count
-
-$list
+Assert { $list.Count -eq 2 }
 
 Add-Type @"
 namespace RhubarbGeekNz.OnReflection
@@ -55,22 +53,20 @@ $bottle = New-Object RhubarbGeekNz.OnReflection.Bottle
 
 $bottle.Message = 'Hello World'
 
-$bottle.Message
+$message = Invoke-Reflection -Method GetMessage -Object $bottle
 
-Write-Warning 'This will log to AMSI'
-
-$bottle.GetMessage()
-
-Write-Information 'This will not log to AMSI'
-
-$bottle.Message = 'Goodbye Cruel World'
-
-Invoke-Reflection -Method GetMessage -Object $bottle
-
-Write-Information 'Demonstrate static method'
+Assert { $message -eq $bottle.Message }
 
 $bytes = [byte[]]@(1,2,3)
 
 $base64 = [string](Invoke-Reflection -Method ToBase64String -Type ([System.Convert]) -ArgumentList @(,$bytes))
 
-Invoke-Reflection -Method FromBase64String -Type ([System.Convert]) -ArgumentList @(,$base64) | Format-Hex
+Assert { $base64 -eq 'AQID' }
+
+$result = Invoke-Reflection -Method FromBase64String -Type ([System.Convert]) -ArgumentDictionary @{
+	s = $base64
+}
+
+Assert { $result.Length -eq 3 }
+
+Write-Information 'Tests complete'
